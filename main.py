@@ -44,11 +44,16 @@ my_data["Duration"]  = my_data.End - my_data.Start
 # Drop values with irrational (longer) event durations
 my_data = my_data[my_data.Duration <= (my_data.Duration.mean() + my_data.Duration.std())]
 
-# Drop events with peak amplitudes > mean +- 2std or < mean +- 2std TODO using & in one expression
-my_data = my_data[my_data.PeakAmp <= (my_data.PeakAmp.mean() + 2 * my_data.PeakAmp.std())]
-my_data = my_data[my_data.PeakAmp >= (my_data.PeakAmp.mean() - 2 * my_data.PeakAmp.std())]
+# Drop events with peak amplitudes > mean +- 2std or < mean +- 2std
+#my_data = my_data[my_data.PeakAmp <= (my_data.PeakAmp.mean() + 2 * my_data.PeakAmp.std())]
+#my_data = my_data[my_data.PeakAmp >= (my_data.PeakAmp.mean() - 2 * my_data.PeakAmp.std())]
+my_data = my_data[my_data.PeakAmp <= (my_data.PeakAmp.mean() + 2 * my_data.PeakAmp.std()) & \
+my_data.PeakAmp >= (my_data.PeakAmp.mean() - 2 * my_data.PeakAmp.std())]
 
 # Raster plot
+def rasterPlot(data, line)
+    plt.eventplot(data, linewidths= line)
+    plt.show()
 #plt.eventplot(my_data.PeakTime, linewidths= 0.01)
 
 # divide data in pre, drug, post, etc.
@@ -80,5 +85,13 @@ def isi(data):
 #bins = np.linspace(0, total_time, num= (total_time / window))
 #my_data["BinnedPeaks"] = pd.cut(my_data["PeakTime"], bins)
 #binned = my_data[["PeakTime", "BinnedPeaks"]].groupby("BinnedPeaks").count() / window
+# TODO convert to spikes per second?, list comprehension can be used?
+#binned_sps = [x * 1000 for x in binned]
 #binned.plot()
 #MAKE HIST? WHAT ARE THE PARAMETERS?
+
+#bin spikes with varying bin size, fixed spikes per bin
+bins = 50
+bins
+
+#make output file with: filename, freq for each window, ISI for each window
