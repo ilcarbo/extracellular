@@ -8,17 +8,11 @@ class Record:
         self._filename = filename
         self._total_time = total_time * 1000 # Convert to ms
         self._exp_t = exp_t
+        #add _ to tags
+        for key in tags:
+            if not key.startswith('_'):
+                tags['_' + key] = tags.pop(key)
         self.__dict__.update(tags)
-
-    #def __init__(self, filename, total_time, exp_t, tag1= None, tag2= None, tag3= None, tag4= None, tag5= None):
-    #    self._filename = filename
-    #    self._total_time = total_time * 1000 # Convert to ms
-    #    self._exp_t = exp_t # type of experiment, it can be Ach, AchStr, AchAtr, AchBtx1, AchBtx2
-    #    self._tag1 = tag1
-    #    self._tag2 = tag2
-    #    self._tag3 = tag3
-    #    self._tag4 = tag4
-    #    self._tag5 = tag5
 
     def read_and_clean(self):
         # import data table as pandas df
@@ -55,63 +49,82 @@ class Record:
         self.my_data = self.my_data[self.my_data.PeakAmp >= (self.my_data.PeakAmp.mean() - 2 * self.my_data.PeakAmp.std())]
 
         # Create Time column with NaNs
-        self.my_data["TimeTag"] = np.nan #TODO assign values 0 and end to general dataframe
-
+        self.my_data["TimeTag"] = np.nan
+        self.my_data.iloc[0, -1] = 0
+        self.my_data.iloc[-1, -1] = self._total_time
     def divide(self):
         # Divide data on segments based on type of experiment
-        segments = [] # TODO make it self, list of dataframes, use the list for analysis
-        # TODO kill underscore in tags (?)
+        self._segments = [] # TODO list of dataframes, use the list for analysis
         # All experiments have at least 3 initial segments.
         segm_1_finish = (self._tag1 - 5) * 1000
         segm_2_start = (self._tag1 + 5) * 1000
         segm_2_finish = (self._tag2 - 5) * 1000
         segm_3_start = (self._tag2 + 5) * 1000
-        # The end is the same for all experiments
-        end = self._total_time - 5000
+        # The end is the same for all experiments, = self._total_time
+        # if last 5 seconds should be overlooked
+        # end = self._total_time - 5000
 
-        # TODO Change segments name directly?
-        # TODO create time column for each segment with Nan, change first item for start, last for finish.
         # Experiments with Ach only have 3 segments (?)
         if self._exp_t == 'Ach':
-            # self.data_Rpre = self.my_data[self.my_data.PeakTime < segm_1_finish] # change it directly in my_data
-            #self.data_Rpre['TimeTag'].iloc[0] = 0 # this way raises chained assignment warning
-            #self.my_data.loc[self.data_Rpre.index[0], 'TimeTag'] = 0 # Correct way? NO
-            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[0], 'TimeTag'] = 0
-            #self.data_Rpre['TimeTag'].iloc[-1] = segm_1_finish # this way raises chained assignment warning
-            #self.my_data.loc[self.data_Rpre.index[-1], 'TimeTag'] = segm_1_finish # correct way? NO
-            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[-1], 'TimeTag'] = segm_1_finish
-            self.data_Rpre = self.my_data[self.my_data.PeakTime < segm_1_finish] # Es una grasada pero funciona
-            self.data_Rpre.name = 'Ringer'
-            segments.append(self.data_Rpre)
-            # self.data_ach = self.my_data[(self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
-            # self.data_ach['TimeTag'].iloc[0] = segm_2_start
-            # self.data_ach['TimeTag'].iloc[-1] = segm_2_finish
-            # self.data_ach.name = 'Ach'
-            # segments.append(self.data_ach)
-            # self.data_Rpost = self.my_data[(self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < end)]
-            # self.data_Rpost['TimeTag'].iloc[0] = segm_3_start
-            # self.data_Rpost['TimeTag'].iloc[-1] = end
-            # self.data_Rpost.name = 'Ringer'
-            # segments.append(self.data_Rpost) #TODO check chained assignments from hell
-            # dataframes can have attributes assigned, data_Rpre.tstart and data_Rpre.tend can be assigned but they'll
-            # work only for that copy
 
-        #UNCHANGED
+            # First segment
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[0], 'TimeTag'] = 0
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[-1], 'TimeTag'] = segm_1_finish
+            self.data_pre = self.my_data[self.my_data.PeakTime < segm_1_finish]
+            self.data_pre.name = "pre: Ringer1"
+            self._segments.append(self.data_pre)
+            # Second segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[0], 'TimeTag'] = segm_2_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[-1], 'TimeTag'] = segm_2_finish
+            self.data_during = self.my_data[(self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
+            self.data_during.name = 'during: Ach'
+            self._segments.append(self.data_during)
+            # Last segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[0], 'TimeTag'] = segm_3_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[-1], 'TimeTag'] = self._total_time
+            self.data_post = self.my_data[(self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < self._total_time)]
+            self.data_post.name = 'post: Ringer2'
+            self._segments.append(self.data_post)
+
         elif self._exp_t == 'AchStr':
             segm_3_finish = (self._tag3 - 5) * 1000
             segm_4_start = (self._tag3 + 5) * 1000
+
+            # First segment
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[0], 'TimeTag'] = 0
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[-1], 'TimeTag'] = segm_1_finish
             self.data_pre1 = self.my_data[self.my_data.PeakTime < segm_1_finish]
-            self.data_pre1.name = 'Ringer'
-            segments.append(self.data_pre1.name)
+            self.data_pre1.name = "pre1: Ringer1"
+            self._segments.append(self.data_pre1)
+            # Second segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[0], 'TimeTag'] = segm_2_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[-1], 'TimeTag'] = segm_2_finish
             self.data_pre2 = self.my_data[(self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
-            self.data_pre2.name = 'Ringer + Str'
-            segments.append(self.data_pre2.name)
+            self.data_pre2.name = 'pre2: Ringer + Str'
+            self._segments.append(self.data_pre2)
+            # Third segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < segm_3_finish)].index[0], 'TimeTag'] = segm_3_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < segm_3_finish)].index[-1], 'TimeTag'] = segm_3_finish
             self.data_during = self.my_data[(self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < segm_3_finish)]
-            self.data_during.name = 'Ach + Str'
-            segments.append(self.data_during.name)
-            self.data_post = self.my_data[(self.my_data.PeakTime > segm_4_start) & (self.my_data.PeakTime < end)]
-            self.data_post.name = 'Ringer'
-            segments.append(self.data_post.name)
+            self.data_during.name = 'during: Ach + Str'
+            self._segments.append(self.data_during)
+            # Last segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_4_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[0], 'TimeTag'] = segm_4_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_4_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[-1], 'TimeTag'] = self._total_time
+            self.data_post = self.my_data[(self.my_data.PeakTime > segm_4_start) & (self.my_data.PeakTime < self._total_time)]
+            self.data_post.name = 'post: Ringer2'
+            self._segments.append(self.data_post)
+
         elif self._exp_t == 'AchAtr':
             segm_3_finish = (self._tag3 - 5) * 1000
             segm_4_start = (self._tag3 + 5) * 1000
@@ -119,43 +132,89 @@ class Record:
             segm_5_start = (self._tag4 + 5) * 1000
             segm_5_finish = (self._tag5 - 5) * 1000
             segm_6_start = (self._tag5 + 5) * 1000
+
+            # First segment
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[0], 'TimeTag'] = 0
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[-1], 'TimeTag'] = segm_1_finish
             self.data_pre1 = self.my_data[self.my_data.PeakTime < segm_1_finish]
-            self.data_pre1.name = 'Ringer'
-            segments.append(self.data_pre1.name)
-            self.data_during1 = self.my_data[
-                (self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
-            self.data_during1.name = 'Ach'
-            segments.append(self.data_during1.name)
-            self.data_post1 = self.my_data[
-                (self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < segm_3_finish)]
-            self.data_post1.name = 'Ringer'
-            segments.append(self.data_post1.name)
+            self.data_pre1.name = 'pre1: Ringer1'
+            self._segments.append(self.data_pre1)
+            # Second segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[0], 'TimeTag'] = segm_2_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[-1], 'TimeTag'] = segm_2_finish
+            self.data_during1 = self.my_data[(self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
+            self.data_during1.name = 'during1: Ach'
+            self._segments.append(self.data_during1)
+            # Third segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < segm_3_finish)].index[0], 'TimeTag'] = segm_3_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < segm_3_finish)].index[-1], 'TimeTag'] = segm_3_finish
+            self.data_post1 = self.my_data[(self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < segm_3_finish)]
+            self.data_post1.name = 'post1: Ringer2'
+            self._segments.append(self.data_post1)
+            # Fourth segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_4_start) &
+                                              (self.my_data.PeakTime < segm_4_finish)].index[0], 'TimeTag'] = segm_4_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_4_start) &
+                                              (self.my_data.PeakTime < segm_4_finish)].index[-1], 'TimeTag'] = segm_4_finish
             self.data_pre2 = self.my_data[(self.my_data.PeakTime > segm_4_start) & (self.my_data.PeakTime < segm_4_finish)]
-            self.data_pre2.name = 'Ringer + Atr'
-            segments.append(self.data_pre2.name)
+            self.data_pre2.name = 'pre2: Ringer + Atr'
+            self._segments.append(self.data_pre2)
+            # Fifth segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_5_start) &
+                                              (self.my_data.PeakTime < segm_5_finish)].index[0], 'TimeTag'] = segm_5_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_5_start) &
+                                              (self.my_data.PeakTime < segm_5_finish)].index[-1], 'TimeTag'] = segm_5_finish
             self.data_during2 = self.my_data[(self.my_data.PeakTime > segm_5_start) & (self.my_data.PeakTime < segm_5_finish)]
-            self.data_during2.name = "Ach + Atr"
-            segments.append(self.data_during2.name)
-            self.data_post2 = self.my_data[(self.my_data.PeakTime > segm_6_start) & (self.my_data.PeakTime < end)]
-            self.data_post2.name = "Ringer"
-            segments.append(self.data_post2.name)
+            self.data_during2.name = 'during2: Ach + Atr'
+            self._segments.append(self.data_during2)
+            # Last segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_6_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[0], 'TimeTag'] = segm_6_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_6_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[-1], 'TimeTag'] = self._total_time
+            self.data_post2 = self.my_data[(self.my_data.PeakTime > segm_6_start) & (self.my_data.PeakTime < self._total_time)]
+            self.data_post2.name = 'post2: Ringer3'
+            self._segments.append(self.data_post2)
+
         elif self._exp_t == 'AchBtx1':
             segm_3_finish = (self._tag3 - 5) * 1000
             segm_4_start = (self._tag3 + 5) * 1000
+
+            # First segment
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[0], 'TimeTag'] = 0
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[-1], 'TimeTag'] = segm_1_finish
             self.data_pre1 = self.my_data[self.my_data.PeakTime < segm_1_finish]
-            self.data_pre1.name = 'Ringer'
-            segments.append(self.data_pre1.name)
-            self.data_pre2 = self.my_data[
-                (self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
-            self.data_pre2.name = 'Ringer + Btx'
-            segments.append(self.data_pre2.name)
-            self.data_during = self.my_data[
-                (self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < segm_3_finish)]
-            self.data_during.name = 'Ach + Btx'
-            segments.append(self.data_during.name)
-            self.data_post = self.my_data[(self.my_data.PeakTime > segm_4_start) & (self.my_data.PeakTime < end)]
-            self.data_post.name = 'Ringer'
-            segments.append(self.data_post.name)
+            self.data_pre1.name = "pre1: Ringer1"
+            self._segments.append(self.data_pre1)
+            # Second segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[0], 'TimeTag'] = segm_2_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[-1], 'TimeTag'] = segm_2_finish
+            self.data_pre2 = self.my_data[(self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
+            self.data_pre2.name = 'pre2: Ringer + Btx'
+            self._segments.append(self.data_pre2)
+            # Third segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < segm_3_finish)].index[0], 'TimeTag'] = segm_3_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < segm_3_finish)].index[-1], 'TimeTag'] = segm_3_finish
+            self.data_during = self.my_data[(self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < segm_3_finish)]
+            self.data_during.name = 'during: Ach + Btx'
+            self._segments.append(self.data_during)
+            # Last segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_4_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[0], 'TimeTag'] = segm_4_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_4_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[-1], 'TimeTag'] = self._total_time
+            self.data_post = self.my_data[(self.my_data.PeakTime > segm_4_start) & (self.my_data.PeakTime < self._total_time)]
+            self.data_post.name = 'post: Ringer2'
+            self._segments.append(self.data_post)
+
         elif self._exp_t == 'AchBtx2':
             segm_3_finish = (self._tag3 - 5) * 1000
             segm_4_start = (self._tag3 + 5) * 1000
@@ -163,33 +222,56 @@ class Record:
             segm_5_start = (self._tag4 + 5) * 1000
             segm_5_finish = (self._tag5 - 5) * 1000
             segm_6_start = (self._tag5 + 5) * 1000
+
+            # First segment
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[0], 'TimeTag'] = 0
+            self.my_data.loc[self.my_data.loc[self.my_data.PeakTime < segm_1_finish].index[-1], 'TimeTag'] = segm_1_finish
             self.data_pre1 = self.my_data[self.my_data.PeakTime < segm_1_finish]
-            self.data_pre1.name = 'Ringer'
-            segments.append(self.data_pre1.name)
-            self.data_during1 = self.my_data[
-                (self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
-            self.data_during1.name = 'Ach'
-            segments.append(self.data_during1.name)
-            self.data_post1 = self.my_data[
-                (self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < segm_3_finish)]
-            self.data_post1.name = 'Ringer'
-            segments.append(self.data_post1.name)
-            self.data_pre2 = self.my_data[
-                (self.my_data.PeakTime > segm_4_start) & (self.my_data.PeakTime < segm_4_finish)]
-            self.data_pre2.name = 'Ringer + Btx'
-            segments.append(self.data_pre2.name)
-            self.data_during2 = self.my_data[
-                (self.my_data.PeakTime > segm_5_start) & (self.my_data.PeakTime < segm_5_finish)]
-            self.data_during2.name = "Ach + Btx"
-            segments.append(self.data_during2.name)
-            self.data_post2 = self.my_data[(self.my_data.PeakTime > segm_6_start) & (self.my_data.PeakTime < end)]
-            self.data_post2.name = "Ringer"
-            segments.append(self.data_post2.name)
+            self.data_pre1.name = 'pre1: Ringer1'
+            self._segments.append(self.data_pre1)
+            # Second segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[0], 'TimeTag'] = segm_2_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_2_start) &
+                                              (self.my_data.PeakTime < segm_2_finish)].index[-1], 'TimeTag'] = segm_2_finish
+            self.data_during1 = self.my_data[(self.my_data.PeakTime > segm_2_start) & (self.my_data.PeakTime < segm_2_finish)]
+            self.data_during1.name = 'during1: Ach'
+            self._segments.append(self.data_during1)
+            # Third segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < segm_3_finish)].index[0], 'TimeTag'] = segm_3_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_3_start) &
+                                              (self.my_data.PeakTime < segm_3_finish)].index[-1], 'TimeTag'] = segm_3_finish
+            self.data_post1 = self.my_data[(self.my_data.PeakTime > segm_3_start) & (self.my_data.PeakTime < segm_3_finish)]
+            self.data_post1.name = 'post1: Ringer2'
+            self._segments.append(self.data_post1)
+            # Fourth segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_4_start) &
+                                              (self.my_data.PeakTime < segm_4_finish)].index[0], 'TimeTag'] = segm_4_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_4_start) &
+                                              (self.my_data.PeakTime < segm_4_finish)].index[-1], 'TimeTag'] = segm_4_finish
+            self.data_pre2 = self.my_data[(self.my_data.PeakTime > segm_4_start) & (self.my_data.PeakTime < segm_4_finish)]
+            self.data_pre2.name = 'pre2: Ringer + Btx'
+            self._segments.append(self.data_pre2)
+            # Fifth segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_5_start) &
+                                              (self.my_data.PeakTime < segm_5_finish)].index[0], 'TimeTag'] = segm_5_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_5_start) &
+                                              (self.my_data.PeakTime < segm_5_finish)].index[-1], 'TimeTag'] = segm_5_finish
+            self.data_during2 = self.my_data[(self.my_data.PeakTime > segm_5_start) & (self.my_data.PeakTime < segm_5_finish)]
+            self.data_during2.name = 'during2: Ach + Btx'
+            self._segments.append(self.data_during2)
+            # Last segment
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_6_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[0], 'TimeTag'] = segm_6_start
+            self.my_data.loc[self.my_data.loc[(self.my_data.PeakTime > segm_6_start) &
+                                              (self.my_data.PeakTime < self._total_time)].index[-1], 'TimeTag'] = self._total_time
+            self.data_post2 = self.my_data[(self.my_data.PeakTime > segm_6_start) & (self.my_data.PeakTime < self._total_time)]
+            self.data_post2.name = 'post2: Ringer3'
+            self._segments.append(self.data_post2)
 
-        # TODO define type of experiment when initializing, divide based on that tag. keep time tags with kwargs
-
-    # TODO print how many data segments were obtained.
-        print(f'Your experiment has {len(segments)} segments: {[segment.name for segment in segments]}')
+    # TODO print the "name" + the name of the segment, workaround, set the names with the segment name
+        print(f'Your experiment has {len(self._segments)} segments: {[segment.name for segment in self._segments]}')
 
 
     # TODO make analysis class?
@@ -199,14 +281,43 @@ class Record:
         plt.eventplot(self.my_data.PeakTime, linewidths=line)
         plt.show()
 
-    def afr(self, data):
-        # Returns the average firing rate of the required section
-        # TODO check units
-        return len(data) / self._total_time
+    def measure_time(self, data):
+        return data.loc[data.index[-1], 'TimeTag'] - data.loc[data.index[0], 'TimeTag']
 
-    def isi(self, data):
-        # Returns mean ISI for the section
-        return data.ISI.mean()
+    def afr(self, data= 'everything'):
+        ''' Returns the average firing rate of the required section in spikes / second (Hz)
+        Returns a summary of all the sections by default
+        '''
+        for segment in self._segments:
+            segment.afr = (len(segment) / self.measure_time(segment)) * 1000
+        if data == 'everything':
+            for segment in self._segments:
+                print(segment.name + ' -> ' + str(round(segment.afr, 3)) + ' Hz')
+        elif data == 'global':
+            afr = (len(self.my_data) / self.measure_time(self.my_data)) * 1000
+            print(f'The average firing rate for the whole experiment is: {round(afr, 3)} Hz')
+        else:
+            for seg in self._segments:
+                if data in seg.name:
+                    return seg.afr # round?
+
+
+    def meanisi(self, data= 'everything'):
+        ''' Returns mean ISI for the required section
+        Returns a summary of all the sections by default
+        '''
+        for segment in self._segments:
+            segment.isi = segment.ISI.mean()
+        if data == 'everything':
+            for segment in self._segments:
+                print(segment.name + ' -> ' + str(round(segment.isi, 3)))
+        elif data == 'global':
+            print(f'The mean ISI for the whole experiment is: {round(self.my_data.ISI.mean(), 3)}')
+        else: 
+            for seg in self._segments:
+                if data in seg.name:
+                    return seg.ISI.mean() # round?
+
 
     def ifr1(self, data, window= 50, plot= False): #TODO fix, doesn't work
         #
